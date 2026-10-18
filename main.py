@@ -1,3 +1,15 @@
+"""
+main.py — сбор отзывов о приложении из Google Play, раскладка по звёздам,
+отчёт и AI-анализ проблем и преимуществ.
+
+Запуск:
+    python main.py                                   # спросит число отзывов
+    python main.py --package com.logistic.sdek -n 500
+"""
+
+import argparse
+from pathlib import Path
+
 from google_play_scraper import app, reviews, Sort
 import pandas as pd
 import os
@@ -139,11 +151,17 @@ def show_examples(sorted_reviews):
 
 def main():
     """Основная функция"""
-    # Настройки
-    PACKAGE_NAME = 'com.logistic.sdek'
-    LANGUAGE = 'ru'
-    COUNTRY = 'ru'
-    MAX_REVIEWS = int(input('Введите сколько нужно обработать комментариев: '))
+    parser = argparse.ArgumentParser(description="Сбор и анализ отзывов из Google Play")
+    parser.add_argument("--package", default="com.logistic.sdek", help="id приложения в Google Play")
+    parser.add_argument("-n", "--max-reviews", type=int, help="сколько отзывов собрать")
+    parser.add_argument("--lang", default="ru")
+    parser.add_argument("--country", default="ru")
+    args = parser.parse_args()
+
+    PACKAGE_NAME = args.package
+    LANGUAGE = args.lang
+    COUNTRY = args.country
+    MAX_REVIEWS = args.max_reviews or int(input('Введите сколько нужно обработать комментариев: '))
     
     print("🚀 ЗАПУСК СБОРА ОТЗЫВОВ")
     print("=" * 40)
@@ -181,7 +199,7 @@ def main():
     create_simple_report(sorted_reviews, app_details['title'], PACKAGE_NAME, folder_name)
     
     print("\n🤖 Запускаем AI анализ...")
-    asyncio.run(create_analyze_file())
+    asyncio.run(create_analyze_file(Path(folder_name), app_details['title']))
     
     print(f"\n🎉 ГОТОВО!")
     print(f"📁 Файлы сохранены в папку: {folder_name}")
@@ -193,6 +211,7 @@ def main():
     print("- reviews_5_stars.csv - отзывы с 5 звездами")
     print("- all_reviews.csv - все отзывы в одном файле")
     print("- report.txt - сводный отчет")
+    print("- reviews_analyze.txt - AI-анализ проблем и преимуществ")
 
 if __name__ == "__main__":
     main()
