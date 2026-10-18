@@ -1,3 +1,10 @@
+"""
+generate.py — анализ отзывов через LLM (OpenRouter): главные проблемы и преимущества
+по выборке 1★ и 5★ отзывов. Если все модели недоступны — честная сводка по цифрам.
+"""
+
+from pathlib import Path
+
 import pandas as pd
 from openai import AsyncOpenAI
 from dotenv import load_dotenv
@@ -21,11 +28,11 @@ models_to_try = [
     "microsoft/wizardlm-2-7b:free"
 ]
 
-async def ai_generate_from_csv():
+async def ai_generate_from_csv(folder: Path, app_title: str):
     try:
-        # Читаем CSV файлы
-        df1 = pd.read_csv(r'reviews_com.logistic.sdek\reviews_1_stars.csv')
-        df2 = pd.read_csv(r'reviews_com.logistic.sdek\reviews_5_stars.csv')
+        # Path вместо строки с "\\": обратный слэш работает только на Windows
+        df1 = pd.read_csv(folder / "reviews_1_stars.csv")
+        df2 = pd.read_csv(folder / "reviews_5_stars.csv")
         
         # Берем меньше данных для экономии токенов
         df1_sample = df1.head(10)
@@ -37,7 +44,7 @@ async def ai_generate_from_csv():
         
         # Создаем промпт с данными из CSV
         prompt = f"""
-Проанализируй эти отзывы на приложение СДЭК:
+Проанализируй эти отзывы на приложение {app_title}:
 
 ОТЗЫВЫ С 1 ЗВЕЗДОЙ (проблемы):
 {csv1_text}
@@ -55,11 +62,6 @@ async def ai_generate_from_csv():
             for attempt in range(max_retries):
                 try:
                     print(f"🔄 Попытка {attempt + 1} с моделью: {model}")
-                    
-                    # СЛУЧАЙНАЯ ЗАДЕРЖКА от 60 до 120 секунд
-                    # wait_time = random.randint(60, 120)
-                    # print(f"⏳ Ждем {wait_time} секунд для избежания лимита...")
-                    # await asyncio.sleep(wait_time)
                     
                     completion = await client.chat.completions.create(
                         model=model,
@@ -95,48 +97,46 @@ async def ai_generate_from_csv():
                             print(f"🚫 Модель {model} недоступна, пробуем следующую...")
                             continue
                     else:
-                        continue
+                        # Ошибка не из-за лимита (модель удалена, неверный запрос) —
+                        # повтор с той же моделью не поможет, сразу берём следующую
+                        break
         
         # Если все модели не сработали
-        return create_fallback_analysis(df1, df2)
+        return create_fallback_analysis(df1, df2, app_title)
         
     except Exception as e:
         print(f"❌ Критическая ошибка: {e}")
         return f"Ошибка анализа: {e}"
 
-def create_fallback_analysis(df1, df2):
-    """Создаем анализ если AI недоступен"""
-    print("⚠️ Все AI модели недоступны, создаем локальный анализ...")
-    
-    # Простой анализ на основе данных
+def create_fallback_analysis(df1, df2, app_title):
+    """Сводка без ИИ: только то, что следует из данных.
+
+    Раньше здесь были "выводы" ("технические проблемы — основная причина
+    негатива"), написанные заранее и не зависящие от данных. Такой текст
+    выглядит как анализ, но им не является — убрано.
+    """
+    print("⚠️ Все AI модели недоступны, сохраняем сводку по цифрам...")
     total_negative = len(df1)
     total_positive = len(df2)
-    
-    analysis = f"""
-АНАЛИЗ ОТЗЫВОВ ПРИЛОЖЕНИЯ СДЭК
-(Локальный анализ - AI временно недоступен)
+    total = total_negative + total_positive
+    share = total_positive / total * 100 if total else 0.0
+    return f"""
+СВОДКА ПО ОТЗЫВАМ: {app_title}
+(AI-анализ недоступен — только статистика)
 
-СТАТИСТИКА:
-- Негативных отзывов (1 звезда): {total_negative}
-- Позитивных отзывов (5 звезд): {total_positive}
-- Соотношение: {total_positive/(total_positive+total_negative)*100:.1f}% положительных
+- Отзывов с 1 звездой: {total_negative}
+- Отзывов с 5 звёздами: {total_positive}
+- Доля 5★ среди крайних оценок: {share:.1f}%
 
-ОСНОВНЫЕ ВЫВОДЫ:
-• Технические проблемы приложения - основная причина негативных отзывов
-• Пользователи ценят скорость и удобство доставки
-• Рекомендуется улучшить стабильность работы приложения
-
-ДЛЯ ДЕТАЛЬНОГО AI АНАЛИЗА:
-Запустите скрипт в непиковое время (ночью или рано утром).
+Для содержательного анализа запустите скрипт позже, когда модели будут доступны.
 """
-    return analysis
 
-async def create_analyze_file():
+async def create_analyze_file(folder: Path, app_title: str):
     try:
-        text = await ai_generate_from_csv()
+        text = await ai_generate_from_csv(folder, app_title)
         
-        # Сохраняем в папку с отзывами
-        output_path = 'reviews_analyze.txt'
+        # Сохраняем рядом с отзывами, а не в корень проекта
+        output_path = folder / "reviews_analyze.txt"
         
         with open(output_path, 'w', encoding='utf-8') as f:
             f.write(text)
